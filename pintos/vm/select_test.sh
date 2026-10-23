@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Usage: select_test.sh [-q|-g] [-r]
+# 사용법: select_test.sh [-q|-g] [-r]
 #   -q|-g : 실행 모드 지정
-#   -r    : clean & rebuild
+#   -r    : 정리 후 다시 빌드
 if (( $# < 1 || $# > 2 )); then
   echo "Usage: $0 [-q|-g] [-r]"
   echo "  -q   : run tests quietly (no GDB stub)"
@@ -48,7 +48,7 @@ tests=()
 
 current_group=""
 
-# ---- Progress UI utilities ----
+# ---- 진행 상태 표시 도우미 ----
 SPINNER_PID=""
 start_spinner() {
   # 사용법: start_spinner "메시지"
@@ -83,7 +83,7 @@ stop_spinner() {
 # 비정상 종료에도 커서 복원
 trap 'stop_spinner >/dev/null 2>&1 || true' EXIT
 
-# ---- Build helper (로그 캡처 + 경고/에러 파싱) ----
+# ---- 빌드 도우미 (로그 캡처 + 경고/오류 분석) ----
 BUILD_LOG=""
 BUILD_WARNINGS=""
 BUILD_ERRORS=""
@@ -136,7 +136,7 @@ canon() {
   # 1) 숨은 문자 제거
   local s=${1%$'\r'}                                   # CR
   s="${s#$'\xEF\xBB\xBF'}"                             # BOM
-  s="${s//$'\xC2\xA0'/ }"                              # NBSP -> space
+  s="${s//$'\xC2\xA0'/ }"                              # NBSP를 공백으로 변환
   s="${s//$'\xE2\x80\x8B'/}"                           # ZWSP 제거
 
   # 2) xargs처럼: IFS 공백 기준으로 토큰화 후 다시 합치기(앞뒤/연속 공백 접힘)
