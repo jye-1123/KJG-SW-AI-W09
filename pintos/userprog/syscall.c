@@ -245,13 +245,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			thread_exit();		/* 내부에서 process_exit() 호출해 자원 정리하고 현재 스레드 종료 */
 		}
-		case SYS_FORK:
+		case SYS_FORK: {
 			f->R.rax = process_fork(f->R.rdi, f);
 			break;
-		case SYS_EXEC:
-			check_address(f->R.rdi);	
+		}
+
+		case SYS_EXEC: {
+			check_address(f->R.rdi);
 			size_t len = strlen((char *)f->R.rdi) + 1;
-			char *k = palloc_get_page(len);
+			char *k = palloc_get_page(0);
 			if (k == NULL) {
 				sys_exit(-1);
 			}
@@ -260,9 +262,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = process_exec(k);
 			sys_exit(-1);
 			break;
-		case SYS_WAIT:
+		}
+
+		case SYS_WAIT: {
 			f->R.rax = process_wait(f->R.rdi);
 			break;
+		}
 		case SYS_CREATE: {
 			const char *create_file_name = (const char *)f->R.rdi;
 			unsigned initial_size = (unsigned)f->R.rsi;

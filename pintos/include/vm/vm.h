@@ -27,6 +27,7 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+#include "hash.h"
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -44,6 +45,7 @@ struct page {
 	const struct page_operations *operations;
 	void *va;              /* 사용자 공간의 가상 주소. */
 	struct frame *frame;   /* 프레임에 대한 참조. */
+	struct hash_elem hash_elem;
 
 	/* 필요한 구현을 추가할 위치. */
 
@@ -85,6 +87,7 @@ struct page_operations {
  * 이 구조체에 특정 설계를 강제하지 않음.
  * 모든 설계는 자유롭게 결정할 수 있음. */
 struct supplemental_page_table {
+	struct hash hash;
 };
 
 #include "threads/thread.h"

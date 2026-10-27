@@ -293,7 +293,7 @@ thread_create (const char *name, int priority, thread_func *function, void *aux)
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
-	/* user program */
+	/* 사용자 프로그램. */
 	struct thread *curr = thread_current();
 	struct child_info *info = malloc(sizeof(*info));
 
@@ -687,7 +687,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->init_priority = priority;
 	list_init(&t->donations);
 
-	/* user program */
+	/* 사용자 프로그램. */
 	list_init(&t->children);
 
 	t->magic = THREAD_MAGIC;
