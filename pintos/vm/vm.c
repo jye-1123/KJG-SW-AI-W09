@@ -4,6 +4,7 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "threads/vaddr.h"
+#include "threads/mmu.h"
 
 uint64_t hash_find_func (const struct hash_elem *e, void *aux);
 bool page_compare_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -150,13 +151,38 @@ vm_evict_frame (void) {
  * 기존 페이지를 내보내 확보한 프레임을 반환함. 항상 유효한 주소를 반환함.
  * 즉, 사용자 풀이 가득 차면 프레임을 비워 사용할 메모리 공간을 확보함.
  */
+/**
+ * @brief 사용자 데이터를 담을 빈 프레임 준비
+ * 
+ * @details
+ * malloc()으로 struct frame 관리 객체를 할당하고,
+ * 사용자 풀에서 실제 데이터를 담을 4KB 공간 확보
+ * 확보한 공간의 커널 가상 주소를 frame->kva에 저장하고,
+ * 아직 연결된 페이지가 없으므로 frame->page를 NULL로 설정
+ * 
+ * @note 현재 단계에서는 메모리 확보에 실패하면 PANIC으로 중단
+ * 	     사용자풀 할당에 실패하면 먼저 할당한 관리 객체 해제함
+ */
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: 이 함수를 구현할 것. */
+	frame = malloc(sizeof *frame);
+	if (frame == NULL) {
+		PANIC("todo");
+	}
 
+	frame->kva = palloc_get_page(PAL_USER);
+	if (frame->kva == NULL) {
+		free(frame);
+		PANIC("todo");
+	}
+
+	frame->page = NULL;
+	
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+
 	return frame;
 }
 
@@ -192,25 +218,52 @@ vm_dealloc_page (struct page *page) {
 
 /* VA에 할당할 페이지의 물리 프레임을 확보함(claim). */
 bool
-vm_claim_page (void *va UNUSED) {
+vm_claim_page (void *va) {
 	struct page *page = NULL;
+	struct thread *thread = thread_current();
 	/* TODO: 이 함수를 구현할 것. */
-
+	page = spt_find_page(&thread->spt, va);
+	if (page == NULL) {
+		return false;
+	}
+	
 	return vm_do_claim_page (page);
 }
 
 /* PAGE의 물리 프레임을 확보하고 MMU를 설정함. */
 static bool
-vm_do_claim_page (struct page *page) {
+vm_do_claim_page (struct page *page) { 
 	struct frame *frame = vm_get_frame ();
 
 	/* 서로를 가리키는 참조를 연결함. */
 	frame->page = page;
 	page->frame = frame;
 
-	/* TODO: 페이지의 VA를 프레임의 PA에 매핑하는 페이지 테이블 항목을 삽입할 것. */
+	uint64_t *pml4 =  thread_current()->pml4;
 
-	return swap_in (page, frame->kva);
+	/* TODO: 페이지의 VA를 프레임의 PA에 매핑하는 페이지 테이블 항목을 삽입할 것. */
+	bool result = false;
+	result = pml4_set_page(pml4, page->va, frame->kva, page->writable);
+	bool swap_result = false;
+
+	if (result == true) {
+		swap_result = swap_in (page, frame->kva);
+		if (swap_result == true) {
+			return true;
+		} else {
+			page->frame = NULL;
+			pml4_clear_page(pml4, page->va);
+			palloc_free_page(frame->kva);
+			free(frame);
+			return false;
+		}
+	} else {
+		page->frame = NULL;
+		palloc_free_page(frame->kva);
+		free(frame);
+		return false;
+	}
+	
 }
 
 /* 새 보조 페이지 테이블을 초기화함. */
