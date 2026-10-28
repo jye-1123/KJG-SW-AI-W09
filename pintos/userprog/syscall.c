@@ -104,7 +104,7 @@ static void check_buffer(const void *buf, size_t size, bool writable)
 		for (const char *i = (const char *)pg_round_down(buf); i <= end; i += PGSIZE)
 		{
 			struct page *pg = spt_find_page(spt, (void*)i);
-			if (pg == NULL || pg->writable == false)
+			if (pg == NULL || pg->writablel == false)
 				sys_exit(-1);
 		}
 	}
@@ -231,6 +231,7 @@ void fd_table_close_all(void) {
 	free(cur->fd_table);
 	cur->fd_table = NULL;
 }
+
 bool exec_check_address(const void *addr) {
 	if (addr == NULL || !is_user_vaddr(addr) || pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		return false;
@@ -246,9 +247,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	int fd = f->R.rdi;
 	switch (f->R.rax)
 	{
-		case SYS_HALT:
+		case SYS_HALT: {
 			power_off();
 			break;
+		}
+
 		case SYS_EXIT: {		/* exit(status) 첫 인자는 rdi로 전달 */
 			int status = (int)f->R.rdi;
 			struct thread *cur = thread_current();
@@ -264,8 +267,9 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			thread_exit();		/* 내부에서 process_exit() 호출해 자원 정리하고 현재 스레드 종료 */
 		}
+
 		case SYS_FORK: {
-			check_address((void *)(f->R.rdi));
+			check_address((void *)f->R.rdi);
 			f->R.rax = process_fork(f->R.rdi, f);
 			break;
 		}
@@ -310,6 +314,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = process_wait(f->R.rdi);
 			break;
 		}
+
 		case SYS_CREATE: {
 			const char *create_file_name = (const char *)f->R.rdi;
 			unsigned initial_size = (unsigned)f->R.rsi;
@@ -328,6 +333,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
+
 		case SYS_REMOVE: {
 			const char *remove_file_name = (const char *)f->R.rdi;
 
@@ -345,6 +351,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
+		
 		case SYS_OPEN: {
 			const char *open_file_name = (const char *)f->R.rdi;
 
@@ -375,6 +382,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
+		
 		case SYS_FILESIZE: {
 			struct file *file = fd_get(fd); // 실제 파일 조회는 이후 open 구현 후 fd 관리 코드와 연결
 
@@ -390,14 +398,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
-		case SYS_READ: {
+		
+case SYS_READ: {
 			void *buffer = (void *)f->R.rsi;
 			unsigned size = (unsigned)f->R.rdx;
 			check_buffer(buffer, size, true);
 #ifdef VM
 			struct supplemental_page_table *spt = &thread_current()->spt;
 			struct page *p = spt_find_page(spt, buffer);
-			if (p == NULL || p->writable == false)
+			if (p == NULL || p->writablel== false)
 				sys_exit(-1);
 #endif
 			if (fd == 0) {
@@ -442,6 +451,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
+
 		case SYS_WRITE: {
 			const void *buffer = (const void *)f->R.rsi;
 			unsigned size = (unsigned)f->R.rdx;
@@ -451,7 +461,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			if (fd == 1) {
 				putbuf(buffer, size);
 				f->R.rax = size;
-			} 
+			}
 			else {
 				struct file* fd_file =fd_get(fd);
 				if (fd_file == NULL) {	// fd 0이나 잘못된 fd면 실패(-1), exit 안 함
@@ -478,6 +488,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			}
 			break;
 		}
+		
 		case SYS_SEEK: {
 			unsigned position = (unsigned)f->R.rsi;
 			struct file *file = fd_get(fd);
@@ -496,6 +507,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
+		
 		case SYS_TELL: {
 			struct file *file = fd_get(fd);
 
@@ -510,11 +522,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 			break;
 		}
-		case SYS_CLOSE:
+		
+		case SYS_CLOSE: {
 			fd_close(fd);	// 잘못된 fd나 이미 닫은 fd는 그냥 무시
 			break;
+		}
+
 		case SYS_DUP2:
 			break;
+
 		default:
 			break;
 	}

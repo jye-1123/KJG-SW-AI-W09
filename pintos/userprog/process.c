@@ -93,6 +93,12 @@ initd (void *f_name) {
 	process_init ();
 	fd_table_create ();
 
+	if (thread_current()->fd_table == NULL) {
+		palloc_free_page(f_name);
+		thread_exit();
+	}
+	
+
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -200,6 +206,11 @@ __do_fork (void *aux) {
 	 * TODO:       성공적으로 복제하기 전까지는 부모가 fork()에서 반환하면
 	 * TODO:       안 된다는 점에 주의할 것. */
 	fd_table_create();
+
+	if (thread_current()->fd_table == NULL) {
+		goto error;
+	}
+
 	for (int i = 2; i < FD_MAX; i++) {
 		if(!parent->fd_table[i]) continue;
 
@@ -356,17 +367,18 @@ process_exit (void) {
 			free (info);
 	}
 
-	file_close(curr->using_file);
+	
 }
 
 /* 현재 프로세스의 리소스를 해제함. */
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
-
 #ifdef VM
 	supplemental_page_table_kill (&curr->spt);
 #endif
+	file_close(curr->using_file);		// 실행 파일 닫기
+	curr->using_file = NULL;
 
 	uint64_t *pml4;
 	/* 현재 프로세스의 페이지 디렉터리(page directory)를 파괴하고

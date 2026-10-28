@@ -1,4 +1,4 @@
-`/**
+/**
  * @file thread.c
  * @brief 스레드
  * @date 2026-10-10
@@ -296,6 +296,10 @@ thread_create (const char *name, int priority, thread_func *function, void *aux)
 	/* 사용자 프로그램. */
 	struct thread *curr = thread_current();
 	struct child_info *info = malloc(sizeof(*info));
+	if (info == NULL) {
+		palloc_free_page(t);
+		return TID_ERROR;
+	}
 
 	info->tid = t->tid;
 	info->exit_status = -1;
