@@ -1,4 +1,4 @@
-/**
+`/**
  * @file thread.c
  * @brief 스레드
  * @date 2026-10-10

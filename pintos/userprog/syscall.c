@@ -87,15 +87,28 @@ void check_address(const void *addr) {
  * 임시: 포인터 검증 함수가 나오면 그 호출로 바꿀 것.
  * check_address()가 pml4_get_page()를 쓰므로 프로젝트 3의 lazy 페이지에는 맞지 않음.
  */
-static void check_buffer(const void *buf, size_t size) {
-	check_address(buf);
-	if (size == 0) {
+static void check_buffer(const void *buf, size_t size, bool writable)
+{
+	if (size == 0)
 		return;
-	}
+	check_address(buf);
 	const char *end = (const char *)buf + size - 1;
-	for (const char *p = (const char *)pg_round_down(buf) + PGSIZE; p <= end; p += PGSIZE) {
+	for (const char *p = (const char *)pg_round_down(buf) + PGSIZE; p <= end; p += PGSIZE)
+	{
 		check_address(p);
 	}
+#ifdef VM
+	struct supplemental_page_table *spt = &thread_current()->spt;
+	if (writable)
+	{
+		for (const char *i = (const char *)pg_round_down(buf); i <= end; i += PGSIZE)
+		{
+			struct page *pg = spt_find_page(spt, (void*)i);
+			if (pg == NULL || pg->writable == false)
+				sys_exit(-1);
+		}
+	}
+#endif
 }
 
 /**
@@ -218,8 +231,14 @@ void fd_table_close_all(void) {
 	free(cur->fd_table);
 	cur->fd_table = NULL;
 }
-
-
+bool exec_check_address(const void *addr) {
+	if (addr == NULL || !is_user_vaddr(addr) || pml4_get_page(thread_current()->pml4, addr) == NULL) {
+		return false;
+	} else {
+		return true;
+	}
+	
+}
 
 /* 시스템 콜의 메인 인터페이스 */
 void
@@ -246,20 +265,43 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			thread_exit();		/* 내부에서 process_exit() 호출해 자원 정리하고 현재 스레드 종료 */
 		}
 		case SYS_FORK: {
+			check_address((void *)(f->R.rdi));
 			f->R.rax = process_fork(f->R.rdi, f);
 			break;
 		}
 
 		case SYS_EXEC: {
-			check_address(f->R.rdi);
-			size_t len = strlen((char *)f->R.rdi) + 1;
+			const char *src = (const char *)f->R.rdi;
+			check_address(src);		/*문자를 읽기 전 사용자 주소 검사*/
+
 			char *k = palloc_get_page(0);
 			if (k == NULL) {
 				sys_exit(-1);
 			}
-			strlcpy(k, f->R.rdi, len);
 			
-			f->R.rax = process_exec(k);
+			bool success = false;
+
+			for (size_t i = 0; i < PGSIZE; i++) {
+				bool result = exec_check_address(src+i);
+				if (result == false) {
+					palloc_free_page(k);
+					sys_exit(-1);
+				}
+				
+				k[i] = src[i];
+				
+				if (k[i] == '\0') {
+					success = true;
+					break;
+				}
+			}
+			
+			if (success == false) {
+				palloc_free_page(k);
+				sys_exit(-1);
+			}
+
+			process_exec(k);
 			sys_exit(-1);
 			break;
 		}
@@ -349,11 +391,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		}
 		case SYS_READ: {
-			void * buffer = (void *)f->R.rsi;
+			void *buffer = (void *)f->R.rsi;
 			unsigned size = (unsigned)f->R.rdx;
-
-			check_buffer(buffer, size);
-
+			check_buffer(buffer, size, true);
+#ifdef VM
+			struct supplemental_page_table *spt = &thread_current()->spt;
+			struct page *p = spt_find_page(spt, buffer);
+			if (p == NULL || p->writable == false)
+				sys_exit(-1);
+#endif
 			if (fd == 0) {
 				uint8_t *buf = buffer;
 				for (unsigned i = 0; i < size; i++) {
@@ -400,7 +446,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			const void *buffer = (const void *)f->R.rsi;
 			unsigned size = (unsigned)f->R.rdx;
 
-			check_buffer(buffer, size);
+			check_buffer(buffer, size, false);
 
 			if (fd == 1) {
 				putbuf(buffer, size);
