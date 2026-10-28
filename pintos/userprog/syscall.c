@@ -104,7 +104,7 @@ static void check_buffer(const void *buf, size_t size, bool writable)
 		for (const char *i = (const char *)pg_round_down(buf); i <= end; i += PGSIZE)
 		{
 			struct page *pg = spt_find_page(spt, (void*)i);
-			if (pg == NULL || pg->writablel == false)
+			if (pg == NULL || pg->writable == false)
 				sys_exit(-1);
 		}
 	}

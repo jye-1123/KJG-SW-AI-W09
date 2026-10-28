@@ -219,7 +219,14 @@ __do_fork (void *aux) {
 		current->fd_table[i] = f;
 	}
 	
-
+	if (parent->using_file != NULL) {
+		current->using_file= file_duplicate(parent->using_file);
+	
+		if (current->using_file == NULL) {
+			goto error;
+		}
+	}
+	
 	process_init ();
 
 	/* 마지막으로 새로 생성된 프로세스로 전환함. */
