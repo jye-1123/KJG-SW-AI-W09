@@ -2,7 +2,6 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
-#include "lib/kernel/hash.h"
 
 enum vm_type {
 	/* 아직 초기화되지 않은 페이지. */
@@ -28,6 +27,7 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+#include "hash.h"
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -45,8 +45,10 @@ struct page {
 	const struct page_operations *operations;
 	void *va;              /* 사용자 공간의 가상 주소. */
 	struct frame *frame;   /* 프레임에 대한 참조. */
+	struct hash_elem hash_elem;
 
-	struct hash_elem h_elem;
+	/* 필요한 구현을 추가할 위치. */
+
 	/* 유형별 데이터를 union에 묶어 저장함.
 	 * 각 함수가 현재 사용하는 union 멤버를 자동으로 판별함. */
 	union {
@@ -83,11 +85,11 @@ struct page_operations {
 
 /* 현재 프로세스의 메모리 공간을 나타냄.
  * 이 구조체에 특정 설계를 강제하지 않음.
-* 모든 설계는 자유롭게 결정할 수 있음. */
-/** @def spt는 해쉬 구조체로 선언하고 spt 관련 함수들을 구현해야함 */
+ * 모든 설계는 자유롭게 결정할 수 있음. */
 struct supplemental_page_table {
-struct hash h;
+	struct hash hash;
 };
+
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
 bool supplemental_page_table_copy (struct supplemental_page_table *dst,

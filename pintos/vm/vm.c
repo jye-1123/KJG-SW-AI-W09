@@ -3,6 +3,11 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/vaddr.h"
+
+uint64_t hash_find_func (const struct hash_elem *e, void *aux);
+bool page_compare_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
+
 
 /* 각 하위 시스템의 초기화 코드를 호출하여 가상 메모리 하위 시스템을 초기화함.
  */
@@ -60,29 +65,66 @@ err:
 	return false;
 }
 
-/* spt에서 VA에 해당하는 페이지를 찾아 반환함. 오류 시 NULL을 반환함. */
+/**
+ * @brief 주어진 가상 주소가 속한 페이지의 관리 객체를 spt에서 찾음
+ * 
+ * @details
+ * 입력 주소를 해당 페이지의 시작 주소로 맞춘 뒤 검색
+ * 예를 들어 0x5123이 들어오면 0x5000을 검색 키로 사용
+ * 
+ * 임시 page(tmp) 객체는 검색할 키를 전달하는 용도로만 사용
+ * 검색에 성공하면 spt에 등록되어 있던 실제 페이지 객체를 반환
+ */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
 	/* TODO: 이 함수를 구현할 것. */
+	struct page tmp;
+	tmp.va = pg_round_down(va);		// 인자로 받은 va의 페이지 시작 주소
+
+	struct hash_elem *tmp_hash_elem = hash_find(&spt->hash, &tmp.hash_elem);
+	if (tmp_hash_elem == NULL) return NULL;
+
+	page = hash_entry(tmp_hash_elem, struct page, hash_elem);
 
 	return page;
 }
 
-/* 유효성을 확인한 뒤 PAGE를 spt에 삽입함. */
+/**
+ * @brief 페이지 관리 객체를 spt에 등록
+ * 
+ * @details
+ * 페이지에 포함된 hash_elem을 해시 테이블에 연결
+ * 같은 시작 가상 주소를 가진 페이지가 이미 있으면
+ * 기존 페이지를 유지하고 새 페이지는 등록하지 않음
+ */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 	int succ = false;
 	/* TODO: 이 함수를 구현할 것. */
+	struct hash_elem *res = hash_insert(&spt->hash, &page->hash_elem);
+	
+	if (!res) {
+		succ = true;
+	}
 
 	return succ;
 }
 
+/**
+ * @brief spt에서 페이지를 제거하고 관리 객체 해제
+ * 
+ * @details
+ * 해시 테이블에서 페이지의 연결 고리를 먼저 제거
+ * 이후 vm_dealloc_page()를 호출하여 페이지별 정리 함수를 실행하고,
+ * 관리 객체의 메모리 해제
+ */
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	hash_delete(&spt->hash, &page->hash_elem);
 	vm_dealloc_page (page);
-	return true;
+	
+	return;
 }
 
 /* 내보낼 대상의 struct frame을 반환함. */
@@ -173,7 +215,12 @@ vm_do_claim_page (struct page *page) {
 
 /* 새 보조 페이지 테이블을 초기화함. */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
+	bool result = hash_init(&spt->hash, hash_find_func, page_compare_func, NULL);
+
+	if (!result) {
+		PANIC("Fail to hash table initd\n");
+	}
 }
 
 /* 보조 페이지 테이블을 src에서 dst로 복사함. */
@@ -181,14 +228,44 @@ bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
 }
-static bool spt_va_equal(const struct hash_elem *a, const struct hash_elem *b, UNUSED void* aux)
-{
-	
 
-}
 /* 보조 페이지 테이블이 보유한 자원을 해제함. */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: 스레드가 보유한 보조 페이지 테이블을 모두 정리하고,
 	 * TODO: 수정된 내용을 저장장치에 다시 기록할 것. */
+}
+
+/**
+ * @brief 페이지의 시작 가상 주소로 해시 값을 계산
+ * @details
+ * 전달받은 연결 고리 e에서 이를 포함하는 struct page를 찾음
+ * 그 페이지의 va에 저장된 주소 값을 해시로 계산
+ * 
+ * 페이지 안의 실제 데이터나 관리 객체 자체의 주소는 해시 계산에 사용 X
+ */
+uint64_t hash_find_func (const struct hash_elem *e, void *aux) {
+	struct page* page_address = hash_entry(e, struct page, hash_elem);
+
+	return hash_bytes(&page_address->va, sizeof page_address->va);
+}
+
+/**
+ * @brief 첫 번째 페이지의 시작 가상 주소가 두 번째보다 작은지 확인
+ * 
+ * @details
+ * 연결 고리 a와 b에서 각각의 struct page를 찾고,
+ * 두 페이지의 va에 저장된 주소 값을 비교
+ * 
+ * 해시 라이브러리는 이 함수를 양방향으로 호출
+ * A가 B보다 작지도 않고, B가 A보다 작지도 않으면 두 요소를 같은 키로 판단
+ */
+bool page_compare_func (const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+	struct page* a_page_ptr = hash_entry(a, struct page, hash_elem);
+	struct page* b_page_ptr = hash_entry(b, struct page, hash_elem);
+
+	if (a_page_ptr->va >= b_page_ptr->va) {
+		return false;
+	}
+	else return true;
 }
