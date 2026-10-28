@@ -181,7 +181,11 @@ bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
 }
+static bool spt_va_equal(const struct hash_elem *a, const struct hash_elem *b, UNUSED void* aux)
+{
+	
 
+}
 /* 보조 페이지 테이블이 보유한 자원을 해제함. */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {

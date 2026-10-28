@@ -23,23 +23,21 @@ static const struct page_operations uninit_ops = {
 };
 
 /* DO NOT MODIFY this function */
-void
-uninit_new (struct page *page, void *va, vm_initializer *init,
-		enum vm_type type, void *aux,
-		bool (*initializer)(struct page *, enum vm_type, void *)) {
-	ASSERT (page != NULL);
-
-	*page = (struct page) {
+void uninit_new(struct page *page, void *va, vm_initializer *init,
+				enum vm_type type, void *aux,
+				bool (*initializer)(struct page *, enum vm_type, void *))
+{
+	ASSERT(page != NULL);
+	*page = (struct page){
 		.operations = &uninit_ops,
 		.va = va,
 		.frame = NULL, /* no frame for now */
-		.uninit = (struct uninit_page) {
+		.uninit = (struct uninit_page){
 			.init = init,
 			.type = type,
 			.aux = aux,
 			.page_initializer = initializer,
-		}
-	};
+		}};
 }
 
 /* 첫 페이지 폴트에서 페이지를 초기화함. */
