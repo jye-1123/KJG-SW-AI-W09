@@ -46,11 +46,24 @@ static struct frame *vm_evict_frame (void);
 /* 초기화 함수를 지정하여 초기화 대기 상태의 페이지 객체를 생성함.
  * 페이지를 직접 생성하지 말고 이 함수나 vm_alloc_page를 통해 생성할 것.
  */
+/**
+ * @brief 나중에 초기화할 페이지를 생성하여 현재 프로세스의 SPT에 등록
+ * 
+ * @details
+ * 같은 가상 주소에 등록된 페이지가 없는지 확인하고.
+ * struct page 관리 객체를 할당
+ * 요청한 최종 종료에 맞는 초기화 함수를 선택하여 uninit_new()에 등록하고,
+ * 페이지를 VM_UNINIT 상태롲 준비함.
+ * 이후 쓰기 권한을 설정하고 SPT에 삽입
+ * 
+ * @note type에는 VM_UNON이나 VM_FILE을 전달하더라도,
+ * 		 생성 직후 페이지의 현재 상태는 VM_UNINIT임
+ * @note 실패 시 이 함수는 aux가 가리키는 자원을 해제하지 않음,
+ * 		 해당 자원의 정리는 호출부와 책임을 정해야 함.
+ */
 bool
-vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
-		vm_initializer *init, void *aux) {
-
-	ASSERT (VM_TYPE(type) != VM_UNINIT)
+vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable, vm_initializer *init, void *aux) {
+	ASSERT (VM_TYPE(type) != VM_UNINIT);
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
@@ -59,8 +72,35 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: 페이지를 생성하고 VM 유형에 맞는 초기화 함수를 구한 뒤,
 		 * TODO: uninit_new를 호출하여 미초기화 페이지 구조체를 생성할 것.
 		 * TODO: uninit_new 호출 후 필요한 필드를 수정할 것. */
+		struct page *page = NULL;
+		page = malloc(sizeof *page);
+		if (page == NULL) {
+			return false;
+		}
+
+		page->va = upage;
+
+		if (VM_TYPE(type) == VM_ANON) {
+			uninit_new(page, page->va, init, type, aux, anon_initializer);
+		} else if (VM_TYPE(type) == VM_FILE) {
+			uninit_new(page, page->va, init, type, aux, file_backed_initializer);
+		} else {
+			free(page);
+			return false;
+		}
+		
+		page->writable = writable;
 
 		/* TODO: 페이지를 spt에 삽입할 것. */
+		
+		if (spt_insert_page(spt, page))
+		{
+			return true;
+		} else {
+			free(page);
+			return false;
+		}
+		
 	}
 err:
 	return false;
@@ -198,12 +238,29 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* 성공하면 true를 반환함. */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+vm_try_handle_fault (struct intr_frame *f, void *addr, bool user, bool write, bool not_present) {
+	struct supplemental_page_table *spt  = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: 처리 가능한 폴트인지 확인할 것. */
 	/* TODO: 여기에 코드를 작성할 것. */
+	if (addr == NULL || is_kernel_vaddr(addr)) {
+		return false;
+	}
+
+	page = spt_find_page(spt, addr);
+	if (page == NULL) {
+		return false;
+	}
+	
+	if (page->writable == false) {
+		if (write == true) {
+			return false;
+		}
+	}
+	if (not_present == false) {
+		return false;
+	}
+	
 
 	return vm_do_claim_page (page);
 }
@@ -222,6 +279,7 @@ vm_claim_page (void *va) {
 	struct page *page = NULL;
 	struct thread *thread = thread_current();
 	/* TODO: 이 함수를 구현할 것. */
+
 	page = spt_find_page(&thread->spt, va);
 	if (page == NULL) {
 		return false;

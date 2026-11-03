@@ -399,32 +399,32 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		}
 		
-case SYS_READ: {
+		case SYS_READ: {
 			void *buffer = (void *)f->R.rsi;
 			unsigned size = (unsigned)f->R.rdx;
 			check_buffer(buffer, size, true);
-#ifdef VM
-			struct supplemental_page_table *spt = &thread_current()->spt;
-			struct page *p = spt_find_page(spt, buffer);
-			if (p == NULL || p->writablel== false)
-				sys_exit(-1);
-#endif
-			if (fd == 0) {
-				uint8_t *buf = buffer;
-				for (unsigned i = 0; i < size; i++) {
-					buf[i] = input_getc(); // 키보드에서 한 글자씩 읽어 버퍼에 저장
+			#ifdef VM
+				struct supplemental_page_table *spt = &thread_current()->spt;
+				struct page *p = spt_find_page(spt, buffer);
+				if (p == NULL || p->writable== false)
+					sys_exit(-1);
+			#endif
+				if (fd == 0) {
+					uint8_t *buf = buffer;
+					for (unsigned i = 0; i < size; i++) {
+						buf[i] = input_getc(); // 키보드에서 한 글자씩 읽어 버퍼에 저장
+					}
+					f->R.rax = size;
 				}
-				f->R.rax = size;
-			}
-			else if(fd == 1) {
-				f->R.rax = -1;
-			}
-			else {
-				struct file* fd_file =fd_get(fd);
-				if (fd_file == NULL) {
+				else if(fd == 1) {
 					f->R.rax = -1;
-					break;
 				}
+				else {
+					struct file* fd_file =fd_get(fd);
+					if (fd_file == NULL) {
+						f->R.rax = -1;
+						break;
+					}
 
 				// 락 안에서는 커널 버퍼에만 읽고, 유저 버퍼로의 복사는 락 밖에서 함
 				// 단점: 청크마다 락을 다시 잡고, 시작 위치가 섹터 경계가 아니면 경계 섹터를 두 번 읽음

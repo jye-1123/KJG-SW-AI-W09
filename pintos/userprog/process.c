@@ -20,6 +20,7 @@
 #include "intrinsic.h"
 #include "threads/synch.h"
 #include "userprog/syscall.h"
+#include "threads/malloc.h"
 
 #ifdef VM
 #include "vm/vm.h"
@@ -764,11 +765,30 @@ install_page (void *upage, void *kpage, bool writable) {
 /* 여기서부터의 코드는 project 3 이후에 사용됨.
  * project 2 전용 함수를 구현하려면 위쪽 블록에 구현할 것. */
 
+struct file_info {
+	struct file *file;
+	off_t read_loc;
+	off_t read_size;
+};
+
+
 static bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: 파일에서 세그먼트를 로드할 것 */
 	/* TODO: 주소 VA에서 첫 페이지 폴트(page fault)가 발생하면 이 함수가 호출됨. */
 	/* TODO: 이 함수를 호출할 때 VA를 사용할 수 있음. */
+	struct file_info *info = aux;
+	uint8_t *lazy_adr = page->frame->kva;
+	off_t lazy_read = file_read_at(info->file, lazy_adr, info->read_size, info->read_loc);
+	if (lazy_read != info->read_size) {
+		free(info);
+		return false;
+	}
+	
+	memset(lazy_adr+info->read_size, 0, PGSIZE - info->read_size);
+
+	free(info);
+	return true;
 }
 
 /* FILE의 오프셋 OFS에서 시작하는 세그먼트를 주소 UPAGE에 로드함.
@@ -785,8 +805,7 @@ lazy_load_segment (struct page *page, void *aux) {
  * 성공하면 true를, 메모리 할당 오류나 디스크 읽기 오류가 발생하면
  * false를 반환함. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
-		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
 	ASSERT (ofs % PGSIZE == 0);
@@ -798,16 +817,25 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+		struct file_info *info = malloc(sizeof *info);
+		if (!info) return false;
+
+		info->file = file;
+		info->read_loc = ofs;
+		info->read_size = page_read_bytes;
+
 		/* TODO: lazy_load_segment에 정보를 넘기기 위해 aux를 설정할 것. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+		void *aux = info;
+		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, aux)) {
+			free(info);
 			return false;
+		}
 
 		/* 다음으로 넘어감. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -822,6 +850,21 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: 성공하면 rsp를 그에 맞게 설정할 것.
 	 * TODO: 해당 페이지가 스택임을 표시해야 함. */
 	/* TODO: 여기에 코드를 작성할 것 */
+
+
+	bool alloc_result = vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true);
+	if (alloc_result == false) {
+		return false;
+	}
+
+	bool claim_result = vm_claim_page(stack_bottom);
+	if (claim_result == false) {
+		return success;
+	}
+
+	if_->rsp = USER_STACK;
+	memset(stack_bottom, 0, PGSIZE);
+	success = claim_result;
 
 	return success;
 }
