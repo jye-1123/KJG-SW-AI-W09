@@ -406,7 +406,7 @@ case SYS_READ: {
 #ifdef VM
 			struct supplemental_page_table *spt = &thread_current()->spt;
 			struct page *p = spt_find_page(spt, buffer);
-			if (p == NULL || p->writablel== false)
+			if (p == NULL || p->writable== false)
 				sys_exit(-1);
 #endif
 			if (fd == 0) {

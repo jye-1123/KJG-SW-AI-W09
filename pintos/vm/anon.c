@@ -31,6 +31,8 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &anon_ops;
 
 	struct anon_page *anon_page = &page->anon;
+
+	return true;
 }
 
 /* 스왑 디스크에서 내용을 읽어 페이지를 스왑 인함. */

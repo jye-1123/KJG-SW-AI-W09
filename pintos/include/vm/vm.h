@@ -23,7 +23,8 @@ enum vm_type {
 	/* DO NOT EXCEED THIS VALUE. */
 	VM_MARKER_END = (1 << 31),
 };
-
+/* 스택 표시를 위한 비트 플래그 마커 */
+#define VM_STACK VM_MARKER_0
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"

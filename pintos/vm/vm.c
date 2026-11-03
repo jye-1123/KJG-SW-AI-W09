@@ -53,14 +53,42 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
-
+	
+	
 	/* upage가 이미 사용 중인지 확인함. */
-	if (spt_find_page (spt, upage) == NULL) {
-		/* TODO: 페이지를 생성하고 VM 유형에 맞는 초기화 함수를 구한 뒤,
-		 * TODO: uninit_new를 호출하여 미초기화 페이지 구조체를 생성할 것.
-		 * TODO: uninit_new 호출 후 필요한 필드를 수정할 것. */
+	if (spt_find_page(spt, upage) == NULL)
+	{
+		/* TODO: 페이지를 생성하고 VM 유형에 맞는 초기화 함수를 구한 뒤,*/
+		struct page *page = NULL;
+		page = malloc(sizeof *page);
+		if (page == NULL)
+		{
+			return false;
+		}
+		page->va = upage; 
 
+		if (VM_TYPE(type) == VM_ANON)
+		{
+			uninit_new(page, page->va, init, type, aux, anon_initializer);
+		}
+		else if (VM_TYPE(type) == VM_FILE) {
+			uninit_new(page, page->va, init, type, aux, file_backed_initializer);
+		}
+		else
+		{
+			free(page);
+			return false;
+		}
+
+		/* TODO: uninit_new 호출 후 필요한 필드를 수정할 것. */
+		page->writable = writable;
 		/* TODO: 페이지를 spt에 삽입할 것. */
+		if (spt_insert_page(spt, page) == false)
+		{
+			free(page);
+			return false;
+		}
+		return true;
 	}
 err:
 	return false;
@@ -96,7 +124,7 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
  * 
  * @details
  * 페이지에 포함된 hash_elem을 해시 테이블에 연결
- * 같은 시작 가상 주소를 가진 페이지가 이미 있으면
+ * 같은 시작 가상 주소를 가진 페이지가	 이미 있으면
  * 기존 페이지를 유지하고 새 페이지는 등록하지 않음
  */
 bool
@@ -198,13 +226,15 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* 성공하면 true를 반환함. */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+vm_try_handle_fault (struct intr_frame *f, void *addr ,
+		bool user, bool write, bool not_present ) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
-	/* TODO: 처리 가능한 폴트인지 확인할 것. */
-	/* TODO: 여기에 코드를 작성할 것. */
-
+	page = spt_find_page(spt, addr);
+	if(page == NULL || is_kernel_vaddr(addr) || write == true && page->writable == false)
+	{
+		return false;
+	}
 	return vm_do_claim_page (page);
 }
 
