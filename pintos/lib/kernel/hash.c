@@ -275,7 +275,7 @@ uint64_t
 hash_int (int i) {
 	return hash_bytes (&i, sizeof i);
 }
-
+
 /* H에서 E가 속하는 버킷을 반환함. */
 static struct list *
 find_bucket (struct hash *h, struct hash_elem *e) {

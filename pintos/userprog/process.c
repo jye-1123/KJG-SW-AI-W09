@@ -194,6 +194,15 @@ __do_fork (void *aux) {
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
+#endif
+	if (parent->using_file != NULL) {
+		current->using_file= file_duplicate(parent->using_file);
+	
+		if (current->using_file == NULL) {
+			goto error;
+		}
+	}
+#ifdef VM
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
@@ -219,15 +228,7 @@ __do_fork (void *aux) {
 		if(f == NULL) { goto error; }
 		current->fd_table[i] = f;
 	}
-	
-	if (parent->using_file != NULL) {
-		current->using_file= file_duplicate(parent->using_file);
-	
-		if (current->using_file == NULL) {
-			goto error;
-		}
-	}
-	
+
 	process_init ();
 
 	/* 마지막으로 새로 생성된 프로세스로 전환함. */
@@ -261,6 +262,9 @@ process_exec (void *f_name) {
 	/* 먼저 현재 컨텍스트를 제거함 */
 	process_cleanup();
 
+	#ifdef VM
+		supplemental_page_table_init(&thread_current()->spt);
+	#endif
 	/* 그런 다음 바이너리를 로드함 */
 
 	success = load(file_name, &_if);
@@ -765,11 +769,7 @@ install_page (void *upage, void *kpage, bool writable) {
 /* 여기서부터의 코드는 project 3 이후에 사용됨.
  * project 2 전용 함수를 구현하려면 위쪽 블록에 구현할 것. */
 
-struct file_info {
-	struct file *file;
-	off_t read_loc;
-	off_t read_size;
-};
+
 
 
 static bool

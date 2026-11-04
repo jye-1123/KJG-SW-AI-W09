@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "filesys/off_t.h"
 
 tid_t process_create_initd (const char *file_name);
 tid_t process_fork (const char *name, struct intr_frame *if_);
@@ -27,6 +28,12 @@ struct child_info {
     struct semaphore fork_sema;
     bool fork_success;
     struct list_elem elem;
+};
+
+struct file_info {
+	struct file *file;
+	off_t read_loc;
+	off_t read_size;
 };
 
 #endif /* userprog/process.h */
