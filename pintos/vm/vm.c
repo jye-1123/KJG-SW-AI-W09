@@ -5,6 +5,8 @@
 #include "vm/inspect.h"
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
+#include "userprog/process.h"
+#include <string.h>
 
 uint64_t hash_find_func (const struct hash_elem *e, void *aux);
 bool page_compare_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -321,7 +323,6 @@ vm_do_claim_page (struct page *page) {
 		free(frame);
 		return false;
 	}
-	
 }
 
 /* 새 보조 페이지 테이블을 초기화함. */
@@ -334,17 +335,82 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 	}
 }
 
+
 /* 보조 페이지 테이블을 src에서 dst로 복사함. */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst, struct supplemental_page_table *src) {
+	struct hash_iterator i;
+	hash_first(&i, &src->hash);
+
+	while (hash_next(&i)) {
+		struct hash_elem *elem = hash_cur(&i);
+		struct page *page_adr = hash_entry(elem, struct page, hash_elem);
+
+		void *child_va = page_adr->va;
+		bool child_acc = page_adr->writable;
+
+		if (page_adr->operations->type == VM_UNINIT)
+		{
+			enum vm_type child_type = page_adr->uninit.type;
+			vm_initializer *child_init = page_adr->uninit.init;
+			struct file_info *parent_aux = page_adr->uninit.aux;
+
+			/* parent_aux를 바탕으로 자식용 aux 준비 */
+			struct file_info *child_file_info = NULL;
+			if (parent_aux != NULL)
+			{
+				child_file_info = malloc(sizeof *child_file_info);
+				if (child_file_info == NULL)
+				{
+					return false;
+				}
+				child_file_info->file = thread_current()->using_file;
+				child_file_info->read_loc = parent_aux->read_loc;
+				child_file_info->read_size = parent_aux->read_size;
+			}
+				bool result = vm_alloc_page_with_initializer(child_type, child_va, child_acc, child_init, child_file_info);
+				if (result == false)
+				{
+					free(child_file_info);
+					return false;
+				}
+		}
+		
+		else if (page_adr->operations->type == VM_ANON)
+		{
+			bool alloc_result = vm_alloc_page(VM_ANON, child_va, child_acc);
+			if (alloc_result == false)
+			{
+				return false;
+			}
+
+			bool claim_result = vm_claim_page(child_va);
+			if (claim_result == false)
+			{
+				return false;
+			}
+			
+			struct page *child_page = spt_find_page(dst, child_va);
+			if (child_page == NULL)
+			{
+				return false;
+			}
+			memcpy(child_page->frame->kva, page_adr->frame->kva, PGSIZE);
+		}
+		else return false;
+	}
+	return true;
 }
 
 /* 보조 페이지 테이블이 보유한 자원을 해제함. */
+static void page_destroy_action(struct hash_elem *elem, void *aux) {
+	struct page *page = hash_entry(elem, struct page, hash_elem);
+	vm_dealloc_page(page);
+}
+
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
-	/* TODO: 스레드가 보유한 보조 페이지 테이블을 모두 정리하고,
-	 * TODO: 수정된 내용을 저장장치에 다시 기록할 것. */
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
+	hash_destroy(&spt->hash, page_destroy_action);
 }
 
 /**
